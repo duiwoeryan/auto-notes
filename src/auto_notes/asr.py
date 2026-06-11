@@ -41,6 +41,7 @@ class ASREngine:
             path_or_hf_repo=self._model_path,
             language=language,
             temperature=0,
+            condition_on_previous_text=False,
         )
 
         segments = [

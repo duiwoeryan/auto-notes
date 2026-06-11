@@ -1,4 +1,4 @@
-"""高代 114 集批量处理 + 分层合并总笔记（带进度条）。"""
+"""114 集批量处理 + 分层合并总笔记（带进度条 + 计时 + 续跑）。"""
 
 import json
 import os
@@ -38,6 +38,17 @@ LLM_BASE_URL = os.getenv("AUTO_NOTES_LLM_BASE_URL") or os.getenv("OPENAI_BASE_UR
 console = Console()
 
 
+# ── 工具函数 ──────────────────────────────────────────
+
+
+def _extract_ep_num(path: Path) -> int:
+    m = re.search(r"(\d+)", path.stem)
+    return int(m.group(1)) if m else 0
+
+
+# ── 第一阶段：获取分 P 列表 ──────────────────────────
+
+
 def get_playlist_urls(limit: int = TOTAL) -> list[str]:
     with console.status("获取分 P 列表..."):
         result = subprocess.run(
@@ -52,7 +63,11 @@ def get_playlist_urls(limit: int = TOTAL) -> list[str]:
     return [f"{BASE_URL}?p={i}" for i in range(1, count + 1)]
 
 
+# ── 第二阶段：逐一处理每集 ──────────────────────────
+
+
 def process_episode(index: int) -> Path | None:
+    """下载音频 → ASR → LLM → 笔记，返回 ep{index}.md 路径。失败返回 None。"""
     tag = f"ep{index:02d}"
     ep_workspace = WORKSPACE_DIR / tag
     ep_output = OUTPUT_DIR / f"{tag}.md"
@@ -71,58 +86,72 @@ def process_episode(index: int) -> Path | None:
         if generated and generated.exists():
             generated.rename(ep_output)
             return ep_output
+        console.print(f"  [red]ep{index:02d}: 未生成笔记文件[/red]")
         return None
-    except Exception:
+    except Exception as e:
+        console.print(f"  [red]ep{index:02d} 失败: {e}[/red]")
         return None
+
+
+# ── 第三阶段：分层合并总笔记 ────────────────────────
+
+
+def _merge_batch(batch: list[Path], start: int, end: int) -> Path:
+    """将一批笔记合并为一个中层摘要文件。"""
+    summary_file = WORKSPACE_DIR / f"summary_{start:02d}-{end:02d}.md"
+
+    if summary_file.exists():
+        return summary_file
+
+    console.print(f"  合并 {start}~{end}（{len(batch)} 篇）...")
+    chunks = [
+        f"## 第{_extract_ep_num(f)}集\n\n{f.read_text(encoding='utf-8')}"
+        for f in batch
+    ]
+    combined = "\n\n---\n\n".join(chunks)
+
+    sys_prompt = (
+        "你是一个数学笔记整理助手。"
+        f"将以下高等代数课程第{start}~{end}集的笔记合并为结构清晰的中层摘要。"
+        "保留核心公式、定理和逻辑脉络。使用 Markdown 格式。"
+    )
+    llm = get_llm(LLM_PROVIDER, base_url=LLM_BASE_URL)
+    result = llm.generate(sys_prompt, f"请整理以下笔记：\n\n{combined}", LLM_MODEL)
+    summary_file.write_text(result, encoding="utf-8")
+    console.print(f"    → {summary_file.name}")
+    return summary_file
 
 
 def hierarchical_merge(md_files: list[Path]):
-    summaries: list[Path] = []
-    sorted_files = sorted(md_files, key=lambda f: int(re.search(r"\d+", f.stem).group()))
+    """Layer 1: 每 GROUP_SIZE 篇 → 中层摘要 → Layer 2: 汇总为总笔记。"""
+    if not md_files:
+        console.print("没有可合并的笔记")
+        return
 
+    files = sorted(md_files, key=_extract_ep_num)
+
+    # Layer 1
     console.print("\n[bold]第二阶段：分层合并[/bold]")
+    summaries: list[Path] = []
+    for offset in range(0, len(files), GROUP_SIZE):
+        batch = files[offset:offset + GROUP_SIZE]
+        start = _extract_ep_num(batch[0])
+        end = _extract_ep_num(batch[-1])
+        summaries.append(_merge_batch(batch, start, end))
 
-    for batch_num in range(0, len(sorted_files), GROUP_SIZE):
-        batch = sorted_files[batch_num: batch_num + GROUP_SIZE]
-        start_ep = int(re.search(r"\d+", batch[0].stem).group())
-        end_ep = int(re.search(r"\d+", batch[-1].stem).group())
-        summary_file = WORKSPACE_DIR / f"summary_{start_ep:02d}-{end_ep:02d}.md"
-
-        if summary_file.exists():
-            summaries.append(summary_file)
-            continue
-
-        console.print(f"  合并 {start_ep}~{end_ep}（{len(batch)} 篇）...")
-        chunks = []
-        for f in batch:
-            m = re.search(r"(\d+)", f.stem)
-            ep_num = m.group(1) if m else "??"
-            chunks.append(f"## 第{ep_num}集\n\n{f.read_text(encoding='utf-8')}")
-
-        combined = "\n\n---\n\n".join(chunks)
-        sys_prompt = (
-            "你是一个数学笔记整理助手。"
-            f"将以下高等代数课程第{start_ep}~{end_ep}集的笔记合并为结构清晰的中层摘要。"
-            "保留核心公式、定理和逻辑脉络。使用 Markdown 格式。"
-        )
-        llm = get_llm(LLM_PROVIDER, base_url=LLM_BASE_URL)
-        result = llm.generate(sys_prompt, f"请整理以下笔记：\n\n{combined}", LLM_MODEL)
-        summary_file.write_text(result, encoding="utf-8")
-        console.print(f"    → {summary_file.name}")
-        summaries.append(summary_file)
-
+    # Layer 2
     total_path = OUTPUT_DIR / "总笔记.md"
     if total_path.exists():
         console.print("总笔记已存在，跳过")
         return
 
     console.print("生成总笔记...")
-    chunks = []
-    for f in sorted(summaries):
-        text = f.read_text(encoding="utf-8")
-        chunks.append(f"## {f.stem.replace('_', ' ')}\n\n{text}")
-
+    chunks = [
+        f"## {s.stem.replace('_', ' ')}\n\n{s.read_text(encoding='utf-8')}"
+        for s in sorted(summaries)
+    ]
     combined = "\n\n---\n\n".join(chunks)
+
     sys_prompt = (
         "你是一个数学笔记整理助手。"
         "将以下高等代数课程各阶段摘要合并为一篇完整的课程总笔记。"
@@ -134,14 +163,21 @@ def hierarchical_merge(md_files: list[Path]):
     console.print(f"[bold green]总笔记 → {total_path}[/bold green]")
 
 
+# ── 主流程 ──────────────────────────────────────────
+
+
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    # 分 P 列表
     urls = get_playlist_urls()
     total = len(urls)
-    already_done = sum(1 for i in range(1, total + 1) if (OUTPUT_DIR / f"ep{i:02d}.md").exists())
-    console.print(f"[bold]共 {total} 集[/bold]（已有 {already_done} 集缓存）")
 
+    # 统计缓存
+    cached = sum(1 for i in range(1, total + 1) if (OUTPUT_DIR / f"ep{i:02d}.md").exists())
+    console.print(f"[bold]共 {total} 集[/bold]（已有 {cached} 集缓存）")
+
+    # 进度条
     progress_bar = Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -158,15 +194,15 @@ def main():
     with progress_bar:
         task = progress_bar.add_task("", total=total)
 
-        # 标记已完成的
+        # 先计入已缓存的
         for i in range(1, total + 1):
             p = OUTPUT_DIR / f"ep{i:02d}.md"
             if p.exists():
                 completed.append(p)
-                progress_bar.update(task, advance=1)
-                progress_bar.update(task, description=f"ep{i:02d} ✅ cached")
+                progress_bar.update(task, advance=1,
+                    description=f"ep{i:02d} ✅ cached")
 
-        # 逐集处理
+        # 逐集处理未完成的
         for i in range(1, total + 1):
             if (OUTPUT_DIR / f"ep{i:02d}.md").exists():
                 continue
@@ -175,19 +211,14 @@ def main():
             result = process_episode(i)
             elapsed = time.time() - t0
 
-            if result:
+            ok = result is not None
+            if ok:
                 completed.append(result)
-                progress_bar.update(task, advance=1,
-                    description=f"ep{i:02d} ✅ {elapsed:.0f}s")
-            else:
-                progress_bar.update(task, advance=1,
-                    description=f"ep{i:02d} ❌")
+            progress_bar.update(task, advance=1,
+                description=f"ep{i:02d} {'✅' if ok else '❌'} {elapsed:.0f}s")
 
-    ok = len(completed)
-    console.print(f"\n[bold]处理完成: {ok}/{total}[/bold]")
-
-    if completed:
-        hierarchical_merge(completed)
+    console.print(f"\n[bold]处理完成: {len(completed)}/{total}[/bold]")
+    hierarchical_merge(completed)
 
 
 if __name__ == "__main__":
