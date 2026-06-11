@@ -14,7 +14,7 @@ class ASREngine:
     """封装 mlx-whisper，利用 Apple Silicon GPU 加速语音识别。"""
 
     def __init__(self) -> None:
-        self._model_path = "mlx-community/whisper-medium-mlx"
+        self._model_path = "mlx-community/whisper-turbo"
 
     def transcribe(
         self,
@@ -40,6 +40,7 @@ class ASREngine:
             str(audio_path),
             path_or_hf_repo=self._model_path,
             language=language,
+            temperature=0,
         )
 
         segments = [
