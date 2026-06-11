@@ -8,7 +8,9 @@ Auto-generate structured Markdown notes from Bilibili videos using ASR (mlx-whis
 uv sync
 ```
 
-Prerequisites: `yt-dlp` must be available on PATH.
+Prerequisites: `ffmpeg` and `yt-dlp` must be available on PATH.
+- ffmpeg: `brew install ffmpeg` (macOS) or `apt install ffmpeg` (Linux)
+- yt-dlp: `brew install yt-dlp` or `pip install yt-dlp`
 
 ## Commands
 ```bash

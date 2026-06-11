@@ -27,7 +27,10 @@ uv run auto-notes 'https://www.bilibili.com/video/BV1xx'
 
 ## 前置依赖
 
-- **yt-dlp** — 视频/音频下载。确保在 PATH 中：`brew install yt-dlp`
+- **ffmpeg** — 音频解码（mlx-whisper 内部调用）。需本机安装：
+  - macOS: `brew install ffmpeg`
+  - Linux: `apt install ffmpeg` 或 `yum install ffmpeg`
+- **yt-dlp** — 视频/音频下载：`brew install yt-dlp`
 - **Apple Silicon Mac** — mlx-whisper 需要 M 系列芯片（M1/M2/M3/M4）获得 GPU 加速
 
 ## 使用示例

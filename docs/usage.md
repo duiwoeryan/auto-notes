@@ -243,7 +243,7 @@ A: `--audio` 模式有下载进度条 + ASR 进度。完整模式还有关键帧
 A: 可以。默认 `--keep` 模式下，已下载的视频/音频、ASR 转录、OCR 结果都会缓存，下次跳过已完成的步骤。
 
 **Q: 提示 `ffmpeg not found`？**
-A: auto-notes 已不再需要 ffmpeg。OpenCV 替代了帧提取，yt-dlp 直接下载音频。
+A: mlx-whisper 需要 ffmpeg 解码音频。安装：`brew install ffmpeg`（macOS）或 `apt install ffmpeg`（Linux）。
 
 **Q: Bilibili 报 `412 Precondition Failed`？**
 A: 需要 `--cookies chrome`（或 firefox/safari）从已登录的浏览器提取 Cookie。

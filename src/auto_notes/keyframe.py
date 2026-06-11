@@ -2,9 +2,6 @@
 
 from pathlib import Path
 
-import cv2
-
-
 class KeyframeExtractor:
     """以固定间隔从视频中抽取帧画面，用于后续 OCR。"""
 
@@ -14,6 +11,7 @@ class KeyframeExtractor:
         output_dir: Path,
         max_frames: int = 120,
     ) -> list[tuple[float, Path]]:
+        import cv2
         """
         按时间均匀抽取至多 max_frames 帧，返回 [(时间戳, 帧文件路径)]。
         视频不可读时返回空列表。

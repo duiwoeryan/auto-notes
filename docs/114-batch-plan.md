@@ -7,7 +7,7 @@ B站「高等代数学-复旦大学-谢启鸿」114 集，每集生成独立笔�
 纯音频模式（`--audio`），跳过帧提取和 OCR。
 
 ## 脚本
-`scripts/batch_process.py`
+`scripts/batch_114.py`
 
 ### 第一阶段：114 集逐一处理
 
